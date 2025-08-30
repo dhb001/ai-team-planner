@@ -60,8 +60,64 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/tasks/by-status - Get tasks grouped by status
+router.get('/by-status', async (req: Request, res: Response) => {
+  console.log('[DEBUG] GET /api/tasks/by-status', req.query);
+  try {
+    const { assignment_id } = req.query;
+    let sql = `
+      SELECT 
+        t.*,
+        s.name as status_name,
+        s.color as status_color,
+        a.title as assignment_title,
+        GROUP_CONCAT(DISTINCT tm.name ORDER BY tm.name SEPARATOR ', ') as assignee_names
+      FROM tasks t
+      LEFT JOIN statuses s ON t.status_id = s.id
+      LEFT JOIN assignments a ON t.assignment_id = a.id
+      LEFT JOIN task_assignees ta ON t.id = ta.task_id
+      LEFT JOIN team_members tm ON ta.member_id = tm.id
+    `;
+
+    const params: any[] = [];
+    let validAssignmentId = undefined;
+    if (assignment_id !== undefined) {
+      const parsedId = parseInt(assignment_id as string, 10);
+      if (!isNaN(parsedId) && parsedId > 0) {
+        validAssignmentId = parsedId;
+        sql += ' WHERE t.assignment_id = ?';
+        params.push(validAssignmentId);
+      } else {
+        // Invalid assignment_id, return empty result
+        return res.json({ tasksByStatus: { 'Not Started': [], 'Ongoing': [], 'Completed': [] } });
+      }
+    }
+
+    sql += `
+      GROUP BY t.id, s.name, s.color, a.title
+      ORDER BY t.status_id, t.part_number, t.created_at
+    `;
+
+    const tasks = await query(sql, params);
+
+    // Group by status
+    const tasksByStatus = {
+      'Not Started': tasks.filter(t => t.status_id === 1),
+      'Ongoing': tasks.filter(t => t.status_id === 2),
+      'Completed': tasks.filter(t => t.status_id === 3),
+    };
+
+    res.json({ tasksByStatus });
+  } catch (error) {
+    console.error('Error fetching tasks by status:', error);
+    res.status(500).json({ error: 'Failed to fetch tasks by status' });
+  }
+});
+
 // GET /api/tasks/:id - Get single task details
 router.get('/:id', async (req: Request, res: Response) => {
+  console.log('[DEBUG] GET /api/tasks/:id', req.params);
+  console.log('[DEBUG] GET /api/tasks/:id', req.params);
   try {
     const taskId = parseInt(req.params.id, 10);
     if (isNaN(taskId)) {
@@ -208,6 +264,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
 
 // GET /api/tasks/by-status - Get tasks grouped by status
 router.get('/by-status', async (req: Request, res: Response) => {
+  console.log('[DEBUG] GET /api/tasks/by-status', req.query);
   try {
     const { assignment_id } = req.query;
     let sql = `
